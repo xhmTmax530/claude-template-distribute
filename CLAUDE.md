@@ -36,6 +36,6 @@
 
 3. 但项目级和全局冲突时，项目级优先级高于全局级
 
-4. 如果系统提示含 "compacted" 字样，或通过语义描述感受到是"/compact"会话，请你阅读摘要的同时阅读 `当前项目目录/.claude/memory/projects/` 目录下当日或最近一次项目总结
+4. 如果系统提示含 "compacted" 字样，或通过语义描述感受到是"/compact"会话，请你阅读摘要的同时阅读 `当前项目目录/.claude/memory/projects/` 目录下当日或最近一次项目总结，同时读取，当前项目目录/.claude/memory/preferences/Feedback.md，如果有的话
 
 5. 提示词中包含"接着上次"/"继续做"等接续话语，读取当日或最近一次项目总结。

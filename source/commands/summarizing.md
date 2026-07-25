@@ -28,6 +28,36 @@ REFERENCES_DIR="$PWD/.claude/memory/references"
 - 如果 `$PROJECTS_DIR` 不存在 → 自动创建 `$PROJECTS_DIR` `$ARCHIVE_DIR` `$REFERENCES_DIR`
 - 创建后输出："已自动创建项目级 memory 目录：projects/ archive/projects/ references/"
 
+### 步骤 1.5：summarizing 落盘健康检查（v1.8 新增）
+
+> **为什么需要**：同事机器上没跑过 setup-claude-template.sh 时，summarizing 自己落盘所需的路径可能缺失（projects/archive/Feedback.md）。直接 Write 会因为父目录不存在而失败。本步骤**主动检测 + 优雅降级**，让 `/summarizing` 永远能落盘成功。
+
+#### 检查清单（精简版——只管 summarizing 自己要的 3 个路径）
+
+| 路径 | 用途 | 缺失行为 |
+|------|------|----------|
+| `$PWD/.claude/memory/projects/` | 步骤 5 写总结 | `mkdir -p` |
+| `$PWD/.claude/memory/archive/projects/` | 步骤 6 归档脚本 | `mkdir -p` |
+| `$PWD/.claude/memory/preferences/Feedback.md` | 步骤 10 写踩坑 | `mkdir -p preferences/` 后留待步骤 10 自决 |
+
+#### 缺失时的提示（黄色警告，不退出）
+
+```
+⚠️  检测到项目级 summarizing 落盘路径未初始化
+    - 已自动创建 .claude/memory/projects/ 和 archive/projects/
+    - 建议：跑 setup-claude-template.sh 获得完整模板
+            （含 MEMORY.md / about-me / preferences 占位 / Harness架构 等）
+```
+
+#### 本步骤**不创建**的（边界，避免越权）
+
+- 项目级 `MEMORY.md`——用户索引，AI 不该擅自写空壳
+- 项目级 `about-me/` 3 个文件——**用户隐私，AI 不能写**
+- 项目级 `preferences/` 7 个偏好占位——**用户偏好，AI 不能写**
+- 项目级 `CLAUDE.md`——三级指针链，由 `/init` 触发，不归 `/summarizing` 管
+
+> **完整脚手架检查**：跑 `bash ~/claude-template-distribute/check-project-hierarchy.sh` 一次性体检 21 项硬性要求。
+
 ### 步骤 2：读模板字段约定
 
 读 `~/.claude/memory/_frontmatter-template.md`，确认 frontmatter 4 字段（name/description/created/tags）。
@@ -96,22 +126,53 @@ AI 自决重要大文件，复制到 `$REFERENCES_DIR`，命名 `YYYY-MM-DD-<主
 - `<绝对路径>` — 描述
 ```
 
-### 步骤 10：踩坑写入项目级 Feedback.md（v1.7 新增）
+### 步骤 10：项目级 Feedback.md 维护（v1.8 重构）
 
-如果本次会话有踩坑记录（bug、shell 脚本污染、设计陷阱等），按以下规则处理：
+> **v1.8 修订点**：v1.7 只在"有踩坑"时才动 Feedback.md，导致跨多次 /summarizing 后 文件可能根本没建。v1.8 拆成 2 个动作：**先确保文件存在**（缺失建占位），**再考虑追加**。
+
+#### 10.1 确保 Feedback.md 存在（兜底建占位）
 
 - **路径**：`$PWD/.claude/memory/preferences/Feedback.md`
-- **判断项目级 Feedback.md 是否存在**：
-  - 不存在 → 新建（用 frontmatter 模板）
-  - 已存在 → **追加**（保留历史踩坑，不覆写）
-- **frontmatter** 字段：name=feedback, description=本次踩坑简述, created=YYYY-MM-DD, type=project
-- **正文** 每条踩坑用 H3 标题 `### YYYY-MM-DD 标题`，正文包含：
-  - 现象（输入 → 输出）
-  - 根因（哪一行代码/设计）
-  - 解法（如何避免）
-  - 适用场景
+- **存在判定**：`test -f "$PWD/.claude/memory/preferences/Feedback.md"`
+- **缺失处理**：写一个**占位骨架**（frontmatter + H1 标题 + "等待踩坑"提示，**不写任何具体踩坑条目**）：
+   ```markdown
+   ---
+   name: feedback
+   description: <项目根>/.claude/memory/preferences/Feedback.md —— 本项目的踩坑记录；触发场景：本次会话有 bug/污染/设计陷阱时由 AI 追加；遵循"先现象→根因→避坑"三段式
+   metadata:
+     type: project
+     created: YYYY-MM-DD
+     tags: [feedback, pitfall]
+   ---
+
+   # Feedback.md — 项目级踩坑记录
+
+   > 本文件由 AI 维护（项目级特例，例外于 CLAUDE.md "memory/ AI 只读"规则）
+   > 写入规则见 `/summarizing` 命令 v1.8 步骤 10
+
+   ---
+
+   ## 踩坑记录
+
+   <!-- 占位：等待 /summarizing 步骤 10.2 追加内容 -->
+   ```
+- **已存在处理**：跳过（保留用户历史内容，**不覆写**）
+
+#### 10.2 追加本次会话的踩坑（如果有）
+
+- **本次会话是否有踩坑**：AI 自决（按 CLAUDE.md "禁止凭空编造"，**没踩坑就跳过这一步**）
+- **追加格式**：每条用 H3 标题 `### YYYY-MM-DD 标题`，正文 3 行：
+  1. **现象**：什么操作 → 出现什么错误结果
+  2. **根因**：哪行代码/哪个设计点
+  3. **避坑**：下次怎么避免
+- **追加规则**：
+  - 用 `cat >>` 追加到文件末尾（不覆写前文）
+  - 多个踩坑用 `---` 分隔
+  - 同一天再次跑 summarizing → 当天多个 H3 标题并列（**不**整体覆盖）
 
 > **为什么是项目级而非全局**：踩坑是项目特定的（每个项目的脚本、设计、约定不同），不应污染全局 memory/。项目级 Feedback.md 跟随项目走，多人协作时同步更精准。
+>
+> **为什么 AI 可写本文件**：CLAUDE.md 措辞已加例外"Feedback.md 由 AI 维护"——因为踩坑是 AI 自己的经验，由 AI 写最准确。
 
 ## 风格要求
 
