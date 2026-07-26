@@ -1,188 +1,167 @@
 ---
-description: 总结当前项目会话上下文，生成每日项目总结文档（含工作进度、待解问题、下阶段计划），自动归档 >3 天的旧总结
+description: Summarize current session into daily project memory file (8 dims incl. priority + status), auto-archive entries older than 3 days, maintain project Feedback.md
 ---
 
-# /summarizing 命令
+# /summarizing command
 
-## 角色
+## Role
+Compress current session into structured doc for next-session handoff.
 
-项目总结专家——把当前会话上下文压缩成结构化文档，方便下次对话快速衔接。
+## Required reading (before step 2)
+`~/.claude/memory/_frontmatter-template.md` — frontmatter schema (name/description/created/tags).
 
-## 必读参考
+## Steps
 
-执行此命令前，**必须先读**：
-`~/.claude/memory/_frontmatter-template.md`
-
-（了解项目总结文件的字段约定）
-
-## 执行步骤
-
-### 步骤 1：环境检查
-
+### Step 1: Env check
 ```bash
 PROJECTS_DIR="$PWD/.claude/memory/projects"
 ARCHIVE_DIR="$PWD/.claude/memory/archive/projects"
 REFERENCES_DIR="$PWD/.claude/memory/references"
 ```
+If `$PROJECTS_DIR` missing → `mkdir -p` all three; log "Auto-created: projects/ archive/projects/ references/".
 
-- 如果 `$PROJECTS_DIR` 不存在 → 自动创建 `$PROJECTS_DIR` `$ARCHIVE_DIR` `$REFERENCES_DIR`
-- 创建后输出："已自动创建项目级 memory 目录：projects/ archive/projects/ references/"
+### Step 1.5: Summarizing landing-path health check (v1.8)
 
-### 步骤 1.5：summarizing 落盘健康检查（v1.8 新增）
+Why: colleagues without setup-claude-template.sh may have missing paths. Detect + graceful degrade so `/summarizing` always lands.
 
-> **为什么需要**：同事机器上没跑过 setup-claude-template.sh 时，summarizing 自己落盘所需的路径可能缺失（projects/archive/Feedback.md）。直接 Write 会因为父目录不存在而失败。本步骤**主动检测 + 优雅降级**，让 `/summarizing` 永远能落盘成功。
+#### Check (3 paths only — summarize's own landing needs)
+| Path | Purpose | If missing |
+|------|---------|-----------|
+| `$PWD/.claude/memory/projects/` | step 5 write | `mkdir -p` |
+| `$PWD/.claude/memory/archive/projects/` | step 6 archive | `mkdir -p` |
+| `$PWD/.claude/memory/preferences/Feedback.md` | step 10 write | `mkdir -p preferences/`, file left to step 10 |
 
-#### 检查清单（精简版——只管 summarizing 自己要的 3 个路径）
-
-| 路径 | 用途 | 缺失行为 |
-|------|------|----------|
-| `$PWD/.claude/memory/projects/` | 步骤 5 写总结 | `mkdir -p` |
-| `$PWD/.claude/memory/archive/projects/` | 步骤 6 归档脚本 | `mkdir -p` |
-| `$PWD/.claude/memory/preferences/Feedback.md` | 步骤 10 写踩坑 | `mkdir -p preferences/` 后留待步骤 10 自决 |
-
-#### 缺失时的提示（黄色警告，不退出）
-
+#### Warn (yellow, no exit)
 ```
-⚠️  检测到项目级 summarizing 落盘路径未初始化
-    - 已自动创建 .claude/memory/projects/ 和 archive/projects/
-    - 建议：跑 setup-claude-template.sh 获得完整模板
-            （含 MEMORY.md / about-me / preferences 占位 / Harness架构 等）
+⚠️ Summarizing landing paths uninitialized
+   - Auto-created: projects/ + archive/projects/
+   - Suggest: run setup-claude-template.sh for full template (MEMORY.md/about-me/preferences/Harness架构)
 ```
 
-#### 本步骤**不创建**的（边界，避免越权）
+#### DO NOT create (boundary, avoid overreach)
+- Project `MEMORY.md` — user index, AI must not write empty
+- Project `about-me/` × 3 — **user privacy**, AI cannot write
+- Project `preferences/` × 7 — **user preferences**, AI cannot write
+- Project `CLAUDE.md` — three-tier chain, owned by `/init`, not `/summarizing`
 
-- 项目级 `MEMORY.md`——用户索引，AI 不该擅自写空壳
-- 项目级 `about-me/` 3 个文件——**用户隐私，AI 不能写**
-- 项目级 `preferences/` 7 个偏好占位——**用户偏好，AI 不能写**
-- 项目级 `CLAUDE.md`——三级指针链，由 `/init` 触发，不归 `/summarizing` 管
+Full scaffold check → `bash ~/claude-template-distribute/check-project-hierarchy.sh` (21 hard requirements).
 
-> **完整脚手架检查**：跑 `bash ~/claude-template-distribute/check-project-hierarchy.sh` 一次性体检 21 项硬性要求。
+### Step 2: Read frontmatter template
+Read `~/.claude/memory/_frontmatter-template.md`, confirm 4 fields (name/description/created/tags).
 
-### 步骤 2：读模板字段约定
-
-读 `~/.claude/memory/_frontmatter-template.md`，确认 frontmatter 4 字段（name/description/created/tags）。
-
-### 步骤 3：列 references/ 文件清单（不读内容）
-
+### Step 3: List references/ filenames only
 ```bash
 ls "$REFERENCES_DIR" 2>/dev/null
 ```
+Remember filenames for step 5 "Reference sources" block. **Do NOT Read content.**
 
-记住这些文件名（用于步骤 5 的"参考来源"区块），**不 Read 文件内容**。
+### Step 4: Summarize 8 dimensions
 
-### 步骤 4：总结 8 维度
+1. **Progress** — table: task | status | priority | note
+2. **Current state** — ≤5 key points
+3. **Pending issues** — blockers + owner/plan
+4. **Core problem** — 1-2 most critical
+5. **Hard points** — tech + decision
+6. **Next stage plan** — ≤5 tasks
+7. **Next session opener** — opening script template
+8. **Files touched** — paths modified/read this session
 
-1. **工作进度**：已完成 / 进行中 / 未开始（表格形式）
-2. **现状描述**：关键状态 ≤5 条
-3. **待解决问题**：阻塞项 + 跟进人/计划
-4. **核心问题**：最重要的 1-2 个
-5. **重难点**：技术难点 + 决策难点
-6. **下阶段工作计划**：≤5 条任务
-7. **下次对话如何开始**：开局话术模板（下次进入时 AI 该怎么接）
-8. **涉及文件清单**：本次会话 touch 过的文件路径
+**Status enum**: ✅ Done / 🚧 In progress / ⏸ Not started / ❌ Blocked
+**Priority enum**: 🔴 P0 immediate / 🟡 P1 this-week / 🟢 P2 this-month / ⚪ P3 someday
 
-### 步骤 5：写入项目总结文件
+**Note column** rules (avoid extra columns, save tokens):
+- Blocked → "waiting on X"
+- Dependency → "depends on Y"
+- Otherwise → free text (1 short clause)
 
-- **路径**：`$PROJECTS_DIR/YYYYMMDD.md`（当天日期）
-- **判断当天文件是否存在**：
-  - 存在 → **覆写**（一天一档，仅保留最新）
-  - 不存在 → 新建
-- **frontmatter** 按模板字段填
-- **正文** 包含 8 维度内容
-- **末尾追加**"参考来源"区块（如有 references 文件）：
+### Step 5: Write project summary file
+- Path: `$PROJECTS_DIR/YYYYMMDD.md`
+- If today's file exists → **overwrite** (one-file-per-day, latest wins)
+- Frontmatter per template
+- Body: 8 dims above
+- Append "Reference sources" block if references/ has files:
   ```markdown
-  ## 参考来源
+  ## Reference sources
 
-  - `references/xxx.md` — 简短说明（按需读）
+  - `references/xxx.md` — short note (read on demand)
   ```
 
-### 步骤 6：调用归档脚本
-
+### Step 6: Run archive script
 ```bash
 bash ~/.claude/skills/summarizing/archive.sh "$PROJECTS_DIR"
 ```
+Capture trailing "Archived: N files".
 
-捕获输出末尾的"归档完成: N 个文件"。
+### Step 7: Output confirmation
+Report to user:
+- Written: `<absolute path>`
+- Archived: N files
+- Auto-created dirs (if any)
 
-### 步骤 7：输出确认
+### Step 8: Backup (v1.5)
+AI self-decides important large files, copy to `$REFERENCES_DIR`, name `YYYY-MM-DD-<topic>.md`.
 
-向用户报告：
-
-- 已写入：`<绝对路径>`
-- 归档：N 个文件
-- 自动创建目录（如适用）
-
-### 步骤 8：备份（v1.5 新增）
-
-AI 自决重要大文件，复制到 `$REFERENCES_DIR`，命名 `YYYY-MM-DD-<主题>.md`。
-
-### 步骤 9：引用（v1.5 新增）
-
-今日总结文末追加：
-
+### Step 9: References (v1.5)
+Append at end of today's summary:
 ```markdown
-## 重要参考
+## Important references
 
-- `<绝对路径>` — 描述
+- `<absolute path>` — description
 ```
 
-### 步骤 10：项目级 Feedback.md 维护（v1.8 重构）
+### Step 10: Project Feedback.md maintenance (v1.8)
 
-> **v1.8 修订点**：v1.7 只在"有踩坑"时才动 Feedback.md，导致跨多次 /summarizing 后 文件可能根本没建。v1.8 拆成 2 个动作：**先确保文件存在**（缺失建占位），**再考虑追加**。
+> **v1.8 fix**: v1.7 only wrote file when there were pitfalls → file might never exist after many runs. v1.8 split into 2 actions: **ensure file exists** (placeholder if missing), **then append** if there are pitfalls.
 
-#### 10.1 确保 Feedback.md 存在（兜底建占位）
+#### 10.1 Ensure Feedback.md exists (fallback placeholder)
+- Path: `$PWD/.claude/memory/preferences/Feedback.md`
+- Existence check: `test -f "$PWD/.claude/memory/preferences/Feedback.md"`
+- If missing → write **placeholder skeleton** (frontmatter + H1 + waiting hint, NO actual pitfalls):
+  ```markdown
+  ---
+  name: feedback
+  description: <project root>/.claude/memory/preferences/Feedback.md — project pitfalls log; trigger: this session has bugs/pollution/design traps, AI appends; format: phenomenon → root cause → avoidance
+  metadata:
+    type: project
+    created: YYYY-MM-DD
+    tags: [feedback, pitfall]
+  ---
 
-- **路径**：`$PWD/.claude/memory/preferences/Feedback.md`
-- **存在判定**：`test -f "$PWD/.claude/memory/preferences/Feedback.md"`
-- **缺失处理**：写一个**占位骨架**（frontmatter + H1 标题 + "等待踩坑"提示，**不写任何具体踩坑条目**）：
-   ```markdown
-   ---
-   name: feedback
-   description: <项目根>/.claude/memory/preferences/Feedback.md —— 本项目的踩坑记录；触发场景：本次会话有 bug/污染/设计陷阱时由 AI 追加；遵循"先现象→根因→避坑"三段式
-   metadata:
-     type: project
-     created: YYYY-MM-DD
-     tags: [feedback, pitfall]
-   ---
+  # Feedback.md — Project pitfalls log
 
-   # Feedback.md — 项目级踩坑记录
+  > AI-maintained (project-level exception to CLAUDE.md "memory/ AI read-only" rule)
+  > Write rules: see `/summarizing` v1.8 step 10
 
-   > 本文件由 AI 维护（项目级特例，例外于 CLAUDE.md "memory/ AI 只读"规则）
-   > 写入规则见 `/summarizing` 命令 v1.8 步骤 10
+  ---
 
-   ---
+  ## Pitfalls
 
-   ## 踩坑记录
+  <!-- Placeholder: awaiting /summarizing step 10.2 append -->
+  ```
+- If exists → skip (preserve history, **no overwrite**)
 
-   <!-- 占位：等待 /summarizing 步骤 10.2 追加内容 -->
-   ```
-- **已存在处理**：跳过（保留用户历史内容，**不覆写**）
+#### 10.2 Append this session's pitfalls (if any)
+- Has pitfalls this session? → AI self-decides (per CLAUDE.md "no fabrication", **skip if none**)
+- Format: H3 title `### YYYY-MM-DD title`, body 3 lines:
+  1. **Phenomenon**: what op → what wrong result
+  2. **Root cause**: which line/design
+  3. **Avoidance**: how to prevent next time
+- Append rules:
+  - `cat >>` to file end (no overwrite)
+  - Multiple pitfalls separated by `---`
+  - Same-day re-run → multiple H3 titles side-by-side (**no** whole-day overwrite)
 
-#### 10.2 追加本次会话的踩坑（如果有）
-
-- **本次会话是否有踩坑**：AI 自决（按 CLAUDE.md "禁止凭空编造"，**没踩坑就跳过这一步**）
-- **追加格式**：每条用 H3 标题 `### YYYY-MM-DD 标题`，正文 3 行：
-  1. **现象**：什么操作 → 出现什么错误结果
-  2. **根因**：哪行代码/哪个设计点
-  3. **避坑**：下次怎么避免
-- **追加规则**：
-  - 用 `cat >>` 追加到文件末尾（不覆写前文）
-  - 多个踩坑用 `---` 分隔
-  - 同一天再次跑 summarizing → 当天多个 H3 标题并列（**不**整体覆盖）
-
-> **为什么是项目级而非全局**：踩坑是项目特定的（每个项目的脚本、设计、约定不同），不应污染全局 memory/。项目级 Feedback.md 跟随项目走，多人协作时同步更精准。
+> **Why project-level not global**: pitfalls are project-specific (each project's scripts/designs/conventions differ), should not pollute global memory/. Project-level Feedback.md travels with project, syncs more precisely for multi-person collaboration.
 >
-> **为什么 AI 可写本文件**：CLAUDE.md 措辞已加例外"Feedback.md 由 AI 维护"——因为踩坑是 AI 自己的经验，由 AI 写最准确。
+> **Why AI can write this file**: CLAUDE.md carve-out "Feedback.md AI-maintained" — pitfalls are AI's own experience, AI writes most accurately.
 
-## 风格要求
+## Style requirements
+- 8 dims separated by H2 headers
+- Markdown tables for progress/status
+- No verbose greetings
+- Insights summary at end
 
-- 8 维度每节用 H2 标题分隔
-- 表格用 markdown 表格语法
-- 避免冗余寒暄
-- 洞察性总结放在最末
-
-## 触发场景
-
-- 用户说"总结一下今天的工作"
-- 用户输入 `/summarizing`
-- 一天结束准备保存进度
+## Trigger scenarios
+- User says "summarize today's work"
+- User types `/summarizing`
+- End-of-day progress save
