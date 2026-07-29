@@ -115,19 +115,95 @@ bash ~/.claude/skills/summarizing/archive.sh "$PROJECTS_DIR"
 - 归档：N 个文件
 - 自动创建目录（如适用）
 
-### 步骤 8：备份（v1.5 新增）
+### 步骤 8：references/ 指针化 + 大文件落盘（v2.1 强化）
 
-AI 自决重要大文件，复制到 `$REFERENCES_DIR`，命名 `YYYY-MM-DD-<主题>.md`。
+> **v2.1 修订**：v1.5 仅一句"AI 自决"导致漏率高（AI 不知道哪些该存）。v2.1 给**5 条硬触发清单** + **推荐命名规范**，让 AI 不靠"灵感"决定，按规则机械执行。
 
-### 步骤 9：引用（v1.5 新增）
+#### 8.1 触发清单——本会话出现任一情况，必须 cp 到 `references/`
 
-今日总结文末追加：
+1. **用户给了大段材料**：PDF / 教程 / 长邮件 / 会议纪要 / 聊天记录截屏转文本 / 用户粘贴的官方文档
+2. **AI 自己读了 1+ 个长网页**（>30 行有效内容）：技术文章、Stack Overflow 答案、GitHub README
+3. **用户引用了某个外部资源**：URL（GitHub/Gist/博客/论文/视频脚本）
+4. **用户给了研究报告/对比分析/选型表**（任何结构化大文本）
+5. **AI 自己写了 >50 行的研究报告**（如 selection-report 维度 4 的技术栈调研）
+
+**没有触发** → 跳过整个 Step 8（不写空区块，省 token）
+
+#### 8.2 命名规范
+
+```
+YYYY-MM-DD-<类型>-<主题>.md
+```
+
+- **类型**：`article`（网页/博客）/ `paper`（论文）/ `guide`（官方教程）/ `report`（研究报告）/ `chat`（聊天记录）/ `pdf`（PDF 转文本）/ `code`（代码片段）
+- **主题**：kebab-case 简短描述（如 `rag-progressive-disclosure`、`graphrag-multi-hop`）
+
+**示例**：
+- `2026-07-26-article-rag-progressive-disclosure.md`
+- `2026-07-26-paper-graphrag-multi-hop-reasoning.md`
+- `2026-07-26-pdf-claude-code-harness-engineering.md`
+
+#### 8.3 文件内部结构（落地文件 frontmatter）
+
+每个落盘文件必须有 frontmatter（便于后续索引）：
+
+```markdown
+---
+name: <kebab-case>
+description: 一句话——是什么 + 触发场景（什么时候该读这个）
+metadata:
+  type: reference
+  created: YYYY-MM-DD
+  source: <URL 或 "用户提供" 或 "AI 联网获取">
+  tags: [topic1, topic2]
+---
+
+# <主题> — <日期>
+
+> 出处：<URL/来源描述>
+> 触发读取：本项目遇到 X 类型问题时
+
+---
+
+## 完整内容
+...（原文 / 用户原文 / AI 摘录）
+```
+
+#### 8.4 内容原则（避免污染）
+
+- **完整原文优先**：用户给的内容**原样保存**，不要截断不要"优化措辞"
+- **AI 摘录**：必须注明"AI 摘要于 YYYY-MM-DD" + 摘要比例
+- **不重复总结文档里的内容**：总结文档 = 指针 + 摘要；references/ = 完整实体
+- **每个文件 ≤ 500 行**：超长文档拆成多文件（`-part1.md` 等）
+
+### 步骤 9：重要参考（v2.1 指针/实体分层）
+
+今日总结文末追加——**按"指针"和"实体"分层**：
 
 ```markdown
 ## 重要参考
 
-- `<绝对路径>` — 描述
+### 指针（references/ 内的完整内容，按需 Read）
+
+- `references/2026-07-26-article-rag-progressive-disclosure.md` — RAG 渐进式披露原理（出处：xxx 公众号）
+- `references/2026-07-26-paper-graphrag-multi-hop.md` — GraphRAG 多跳推理综述（出处：arxiv.org/...）
+
+### 实体引用（本总结直接引用的本地文件）
+
+- `/path/to/local-doc.md` — 描述
+- （没有就写"无"）
+
+### 外部 URL（未保存的链接，按需联网读）
+
+- <https://github.com/xxx/yyy> — 描述
 ```
+
+**关键原则**：
+- **指针在总结文档里只占 1 行**（不复制内容到总结，避免膨胀）
+- **references/ 内的文件**才算"指针资产"——下次 Read 一次就够
+- **未保存的 URL**留个轻量指针（"按需联网读"），别复制全文
+
+
 
 ### 步骤 10：项目级 Feedback.md 维护（v1.8 重构）
 
@@ -183,6 +259,7 @@ AI 自决重要大文件，复制到 `$REFERENCES_DIR`，命名 `YYYY-MM-DD-<主
 - 表格用 markdown 表格语法
 - 避免冗余寒暄
 - 洞察性总结放在最末
+- **渐进式披露**（v2.1）：总结文档只放**指针 + 摘要**；大块内容放 `references/`，避免总结文件膨胀占用上下文 token
 
 ## 触发场景
 
