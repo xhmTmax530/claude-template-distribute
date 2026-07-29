@@ -8,6 +8,74 @@ description: 总结当前项目会话上下文，生成每日项目总结文档�
 
 项目总结专家——把当前会话上下文压缩成结构化文档，方便下次对话快速衔接。
 
+## 强制子 agent 规则（v2.3 重构）
+
+**本命令 = 把活完全外包给 1 个独立 subagent 全权执行**。主 agent 不进 references/、不读项目总结历史、不预扫 .claude/memory/——**只接 prompt、派 agent、收结果、输出确认**。
+
+### 为什么必须派子 agent（用户的核心理由）
+
+**主 agent 上下文紧张**——`/summarizing` 触发时本会话 token 可能已经见底。让主 agent 再去扫目录、读 references、调脚本会**雪上加霜**。
+
+子 agent 是**独立 context window**，跑完整套 10 步不消耗主 agent 的预算。
+
+### 主 agent / 子 agent 分工
+
+| 主 agent 只做（最小集） | 子 agent 全做（完整跑） |
+|----------------------|----------------------|
+| 接 `/summarizing` 命令 | Step 1：环境检查 |
+| 派 1 个 subagent，prompt 必须包含：本命令全文（步骤 1-10）+ 触发上下文（本次会话做了啥） | Step 1.5：健康检查 |
+| 等子 agent 返回落盘路径 + 归档数 + 自动创建目录清单 | Step 2-3：读模板 + 列 references |
+| **1 句话输出最终确认**（不复读子 agent 报告，避免 token 浪费） | Step 4：8 维度总结 |
+| | Step 5：写 `projects/YYYYMMDD.md` |
+| | Step 6：归档脚本 |
+| | Step 7：准备输出 |
+| | Step 8：references 检查 + 落盘 |
+| | Step 9：重要参考区块 |
+| | Step 10：Feedback.md 维护 |
+
+### 子 agent prompt 模板
+
+```
+你是子 agent，被主 agent 派来执行 /summarizing 命令（v2.3 全权委托版本）。
+
+## 你要做的事
+完整执行下面这份自定义命令（步骤 1-10），把结果返回给主 agent。
+
+## 本次会话上下文
+<主 agent 把"本次会话做了什么"粘到这里>
+- 用户想总结的诉求：
+- 本会话关键改动：
+- 涉及的外部大资料（如有）：
+- 涉及的文件路径：
+
+## 自定义命令（完整 copy）
+<把 ~/.claude/commands/summarizing.md 全文粘到这里，shell 视图 cat $HOME/.claude/commands/summarizing.md>
+
+## 返回格式（必须给主 agent）
+{
+  "written_file": "<绝对路径>",
+  "archived_count": <数字>,
+  "auto_created_dirs": ["projects/", "archive/projects/", ...],
+  "references_landed": ["<文件名>", ...],
+  "feedback_appended": true/false,
+  "warnings": ["<任何黄色警告原文>"]
+}
+```
+
+### 模型选择（v2.3）
+
+子 agent 用什么模型？**默认 opus**——本命令涉及深度会话理解 + 多步推理 + 完整 8 维度。
+
+如果用户想省钱，可以在派 agent 时指定 sonnet（适合会议纪要类短总结）。
+
+### 跳过子 agent = 总结失败
+
+主 agent 直接跑 /summarizing = 在已紧张的上下文里再吞 N 个文件 → token 爆炸 → 总结质量塌方。
+
+**强制约束**：本规则是用户硬性要求，不是优化建议。违反 = 总结不可信。
+
+
+
 ## 必读参考
 
 执行此命令前，**必须先读**：
