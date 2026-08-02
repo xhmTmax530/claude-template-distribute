@@ -4,7 +4,7 @@
 
 ---
 
-## 关于我（about-me目录）
+## 关于我
 
 路径：~/.claude/memory/about-me
 
@@ -12,7 +12,7 @@
 - [tech-stack](tech-stack.md) — **必读**
 - [family](about-me/family.md)  — **仅在用户主动提及家庭时读，默认不读**
 
-## 角色与原则（preferences目录）
+## 角色与原则
 
 路径：~/.claude/memory/preferences
 
@@ -44,4 +44,4 @@
 
 - 触发方式：按需读取
 
-项目级个人画像及偏好目录：`当前项目目录/.claude/memory/about-me`、`/preferences`必读高于全局
+project级个人画像及偏好目录下的所有文件：`当前项目目录/.claude/memory/about-me`、`/preferences`必读高于全局

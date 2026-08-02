@@ -24,13 +24,14 @@
 # | Step | 目标                              | 幂等策略                              |
 # |------|-----------------------------------|---------------------------------------|
 # | 1.4  | 关键文件检测                       | 不创建文件，只读源校验                |
-# | 2    | backup（memory/、summarizing.md） | 已存在则 mv/cp 备份后缀 .bak-YYYYMMDD  |
-# | 3    | mkdir memory/{about-me,preferences}| mkdir -p 已存在不报错                  |
+# | 2    | backup（memory/、summarizing.md、init-template.md） | 已存在则 mv/cp 备份后缀 .bak-YYYYMMDD  |
+# | 3    | mkdir memory/{about-me,preferences}、commands/     | mkdir -p 已存在不报错                  |
 # | 4    | preferences/*.md、MEMORY.md        | ⚠️ 覆盖式（用户要求保留 v1.5 行为）     |
 # | 5    | about-me/{profile,tech,family}    | ✅ 已存在且非空 → 跳过；空/不存在 → 复制 |
-# | 6    | commands/summarizing.md + skills/  | ⚠️ 覆盖式（脚本即命令本身，需保持最新） |
-# | 6.5  | blacklist.md                      | ⚠️ 覆盖式（黑名单规则必须用最新版）    |
+# | 6    | commands/{summarizing,init-template}.md + skills/ | ⚠️ 覆盖式（脚本即命令本身，需保持最新） |
+# | 6.5  | blacklist.md                      | ✅ 缺失或内容不一致 → 覆盖；一致 → 跳过 |
 # | 6.6  | Harness架构.md                    | ✅ 已存在 → 跳过覆盖（保护用户手改）   |
+# | 6.7  | 初始化要求.md、记忆系统架构.md      | ✅ 已存在 → 跳过覆盖（保护用户手改）   |
 # | 7    | ~/.claude/CLAUDE.md                | 🔀 智能追加（grep 标记检测，避免重复） |
 #
 # ✅ = 严格幂等   ⚠️ = 覆盖式幂等（运行结果一致，但内容可能更新）   🔀 = 智能追加
@@ -41,6 +42,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_HOME="${HOME:-/root}"
 BACKUP_DATE="$(date +%Y%m%d)"
+
+# ====== 工具函数（log/warn/err 提前定义） ======
+# 提前到配置区之后：系统目录检测块会调用 warn，定义必须先于调用
+log()  { echo "[$(date +%H:%M:%S)] $*"; }
+warn() { echo "[$(date +%H:%M:%S)] ⚠️  $*" >&2; }
+err()  { echo "[$(date +%H:%M:%S)] ❌ $*" >&2; }
 
 # ====== ⚠️ 使用前必读（前置提示） ======
 echo ""
@@ -89,9 +96,7 @@ for arg in "$@"; do
 done
 
 # ====== 工具函数 ======
-log()  { echo "[$(date +%H:%M:%S)] $*"; }
-warn() { echo "[$(date +%H:%M:%S)] ⚠️  $*" >&2; }
-err()  { echo "[$(date +%H:%M:%S)] ❌ $*" >&2; }
+# log/warn/err 已上移至配置区之后（系统目录检测块会调用 warn，定义必须先于调用）
 
 confirm() {
     local prompt="$1"
@@ -118,6 +123,19 @@ run_cmd() {
         log "$desc"
         "$@"
     fi
+}
+
+# 备份目标名递增：先试 .bak-YYYYMMDD，已存在则追加 -2/-3 序号
+# 解决同一天重跑时 mv 目标已存在导致的嵌套备份/失败（set -e 中止）
+next_backup_name() {
+    local base="$1"
+    local candidate="${base}.bak-${BACKUP_DATE}"
+    local n=2
+    while [ -e "$candidate" ]; do
+        candidate="${base}.bak-${BACKUP_DATE}-${n}"
+        n=$((n + 1))
+    done
+    printf '%s' "$candidate"
 }
 
 # ====== 源目录多路径查找（4 优先级） ======
@@ -186,7 +204,8 @@ log "✅ 源目录存在: $SOURCE_DIR"
 
 # 1.4 检测关键文件
 for f in "$SOURCE_DIR/memory/MEMORY.md" "$SOURCE_DIR/memory/_frontmatter-template.md" \
-         "$SOURCE_DIR/commands/summarizing.md" "$SOURCE_DIR/skills/summarizing/SKILL.md" \
+         "$SOURCE_DIR/commands/summarizing.md" "$SOURCE_DIR/commands/init-template.md" \
+         "$SOURCE_DIR/skills/summarizing/SKILL.md" \
          "$SOURCE_DIR/skills/summarizing/archive.sh"; do
     if [ ! -f "$f" ]; then
         err "源文件缺失: $f"
@@ -200,10 +219,12 @@ log ""
 log "===== Step 2: 备份现有文件 ====="
 
 MEMORY_DIR="$TARGET_HOME/.claude/memory"
+MEMORY_BAK=""  # 本次 memory/ 备份目标（用于完成日志的恢复提示）
 if [ -d "$MEMORY_DIR" ]; then
+    MEMORY_BAK="$(next_backup_name "$MEMORY_DIR")"
     warn "检测到现有 memory/ 目录: $MEMORY_DIR"
-    if confirm "将备份为 ${MEMORY_DIR}.bak-${BACKUP_DATE}，是否继续？"; then
-        run_cmd "备份现有 memory/" mv "$MEMORY_DIR" "${MEMORY_DIR}.bak-${BACKUP_DATE}"
+    if confirm "将备份为 $MEMORY_BAK，是否继续？"; then
+        run_cmd "备份现有 memory/" mv "$MEMORY_DIR" "$MEMORY_BAK"
     else
         err "用户取消"
         exit 2
@@ -224,13 +245,25 @@ if [ -f "$TARGET_HOME/.claude/commands/summarizing.md" ]; then
     fi
 fi
 
+# 备份已有 commands/init-template.md
+if [ -f "$TARGET_HOME/.claude/commands/init-template.md" ]; then
+    warn "检测到现有 commands/init-template.md"
+    if confirm "将备份为 .bak-${BACKUP_DATE}，是否继续？"; then
+        run_cmd "备份 init-template.md" \
+            cp "$TARGET_HOME/.claude/commands/init-template.md" \
+               "$TARGET_HOME/.claude/commands/init-template.md.bak-${BACKUP_DATE}"
+    else
+        log "用户选择不备份"
+    fi
+fi
+
 # 备份已有 skills/summarizing/
 if [ -d "$TARGET_HOME/.claude/skills/summarizing" ]; then
+    SKILLS_BAK="$(next_backup_name "$TARGET_HOME/.claude/skills/summarizing")"
     warn "检测到现有 skills/summarizing/"
-    if confirm "将备份为 .bak-${BACKUP_DATE}，是否继续？"; then
+    if confirm "将备份为 $SKILLS_BAK，是否继续？"; then
         run_cmd "备份 skills/summarizing/" \
-            mv "$TARGET_HOME/.claude/skills/summarizing" \
-               "$TARGET_HOME/.claude/skills/summarizing.bak-${BACKUP_DATE}"
+            mv "$TARGET_HOME/.claude/skills/summarizing" "$SKILLS_BAK"
     fi
 fi
 
@@ -241,6 +274,7 @@ log "===== Step 3: 复制目录结构 ====="
 run_cmd "创建 memory/ 目录" mkdir -p "$MEMORY_DIR"
 run_cmd "创建 about-me/ 目录" mkdir -p "$MEMORY_DIR/about-me"
 run_cmd "创建 preferences/ 目录" mkdir -p "$MEMORY_DIR/preferences"
+run_cmd "创建 commands/ 目录" mkdir -p "$TARGET_HOME/.claude/commands"
 run_cmd "创建 skills/summarizing/ 目录" \
     mkdir -p "$TARGET_HOME/.claude/skills/summarizing"
 
@@ -288,6 +322,9 @@ log "===== Step 6: 复制 commands + skills ====="
 run_cmd "复制 commands/summarizing.md" \
     cp "$SOURCE_DIR/commands/summarizing.md" "$TARGET_HOME/.claude/commands/summarizing.md"
 
+run_cmd "复制 commands/init-template.md" \
+    cp "$SOURCE_DIR/commands/init-template.md" "$TARGET_HOME/.claude/commands/init-template.md"
+
 run_cmd "复制 skills/summarizing/SKILL.md" \
     cp "$SOURCE_DIR/skills/summarizing/SKILL.md" "$TARGET_HOME/.claude/skills/summarizing/SKILL.md"
 
@@ -305,13 +342,19 @@ BLACKLIST_TARGET="$HOME/claude-template-distribute/blacklist.md"
 BLACKLIST_SOURCE="$DIST_ROOT/blacklist.md"
 
 # 创建工具目录（如果不在标准位置）
-mkdir -p "$(dirname "$BLACKLIST_TARGET")"
+run_cmd "创建 blacklist 工具目录" mkdir -p "$(dirname "$BLACKLIST_TARGET")"
 
 if [ -f "$BLACKLIST_SOURCE" ]; then
     # 复制或更新 blacklist.md（总用最新版，覆盖）
-    run_cmd "安装 blacklist.md 到 $BLACKLIST_TARGET" \
-        cp "$BLACKLIST_SOURCE" "$BLACKLIST_TARGET"
-    log "📋 blacklist.md 已就绪（~/.claude/CLAUDE.md 第 3 条固定引用此路径）"
+    # 防呆：标准位置运行时源与目标是同一文件（cp 会报"同一文件"退出码 1 → set -e 中止），
+    # 因此先判断：目标不存在或内容不一致时才复制
+    if [ ! -f "$BLACKLIST_TARGET" ] || ! cmp -s "$BLACKLIST_SOURCE" "$BLACKLIST_TARGET"; then
+        run_cmd "安装 blacklist.md 到 $BLACKLIST_TARGET" \
+            cp "$BLACKLIST_SOURCE" "$BLACKLIST_TARGET"
+        log "📋 blacklist.md 已就绪（~/.claude/CLAUDE.md 第 3 条固定引用此路径）"
+    else
+        log "📋 blacklist.md 已就绪且内容一致，跳过复制"
+    fi
 else
     warn "未找到 $BLACKLIST_SOURCE，跳过 blacklist.md 安装"
     warn "~/.claude/CLAUDE.md 第 3 条引用 ~/claude-template-distribute/blacklist.md 可能失效"
@@ -337,6 +380,27 @@ else
     warn "未找到 $HARNESS_SOURCE，跳过 Harness架构.md 安装"
     warn "~/.claude/CLAUDE.md Harness 章节引用 ~/.claude/Harness架构.md 可能失效"
 fi
+
+# ====== Step 6.7: 安装 初始化要求.md / 记忆系统架构.md 到 ~/.claude/ ======
+log ""
+log "===== Step 6.7: 安装 初始化要求.md / 记忆系统架构.md ====="
+
+for doc in "初始化要求.md" "记忆系统架构.md"; do
+    DOC_SOURCE="$DIST_ROOT/$doc"
+    DOC_TARGET="$TARGET_HOME/.claude/$doc"
+    if [ -f "$DOC_SOURCE" ]; then
+        if [ -f "$DOC_TARGET" ]; then
+            warn "$DOC_TARGET 已存在，跳过覆盖（保护用户内容）"
+            log "如需更新，请手动 cp $DOC_SOURCE $DOC_TARGET"
+        else
+            run_cmd "安装 $doc 到 $DOC_TARGET" \
+                cp "$DOC_SOURCE" "$DOC_TARGET"
+            log "📋 $doc 已就绪（~/.claude/$doc）"
+        fi
+    else
+        warn "未找到 $DOC_SOURCE，跳过 $doc 安装"
+    fi
+done
 
 # ====== Step 7: CLAUDE.md 追加分发包内嵌内容 ======
 log ""
@@ -445,8 +509,13 @@ else
             2)
                 # 覆盖全局
                 if [ "$CAN_WRITE_GLOBAL" = true ]; then
-                    run_cmd "覆盖 $FOUND_NAME" cp "$DIST_CLAUDE_MD" "$CLAUDE_MD"
-                    log "✅ 已覆盖 $CLAUDE_MD"
+                    if [ "$DIST_CLAUDE_MD" = "$CLAUDE_MD" ]; then
+                        warn "分发包 CLAUDE.md 与目标为同一文件（脚本运行在 ~/.claude/ 下），跳过覆盖"
+                        warn "如需更新请手动编辑 $CLAUDE_MD"
+                    else
+                        run_cmd "覆盖 $FOUND_NAME" cp "$DIST_CLAUDE_MD" "$CLAUDE_MD"
+                        log "✅ 已覆盖 $CLAUDE_MD"
+                    fi
                 else
                     warn "全局 CLAUDE.md 不可写，跳过覆盖"
                 fi
@@ -454,16 +523,24 @@ else
             3)
                 # 追加 + 打标记
                 if [ "$CAN_WRITE_GLOBAL" = true ]; then
-                    run_cmd "追加分发包 CLAUDE.md（含标记）" \
-                        bash -c 'echo "$1" && cat "$2" >> "$3"' _ "$MARKER" "$DIST_CLAUDE_MD" "$CLAUDE_MD"
-                    log "✅ 已追加（含标记 $MARKER，下次运行自动跳过）"
+                    if [ "$DIST_CLAUDE_MD" = "$CLAUDE_MD" ]; then
+                        warn "分发包 CLAUDE.md 与目标为同一文件（脚本运行在 ~/.claude/ 下），跳过追加"
+                        warn "cat 同一文件会导致无限增长；如需项目级副本请选 4"
+                    else
+                        run_cmd "追加分发包 CLAUDE.md（含标记）" \
+                            bash -c 'echo "$1" && cat "$2" >> "$3"' _ "$MARKER" "$DIST_CLAUDE_MD" "$CLAUDE_MD"
+                        log "✅ 已追加（含标记 $MARKER，下次运行自动跳过）"
+                    fi
                 else
                     warn "全局 CLAUDE.md 不可写，跳过追加"
                 fi
                 ;;
             4)
                 # 复制到当前目录（项目级）
-                if [ -f "$PWD_CLAUDE_MD" ] && [ "$FORCE" != true ]; then
+                if [ "$DIST_CLAUDE_MD" = "$PWD_CLAUDE_MD" ]; then
+                    warn "分发包 CLAUDE.md 与目标为同一文件（当前目录就是分发包目录），跳过复制"
+                    warn "如需更新请手动编辑 $PWD_CLAUDE_MD"
+                elif [ -f "$PWD_CLAUDE_MD" ] && [ "$FORCE" != true ]; then
                     warn "$PWD_CLAUDE_MD 已存在，跳过复制（如需覆盖请用 --force）"
                 else
                     run_cmd "复制分发包 CLAUDE.md 到项目根" \
@@ -519,11 +596,12 @@ log "===== ✅ 安装完成 ====="
 log ""
 log "已复制/覆盖的文件："
 log "  ~/.claude/commands/summarizing.md"
+log "  ~/.claude/commands/init-template.md"
 log "  ~/.claude/skills/summarizing/SKILL.md"
 log "  ~/.claude/skills/summarizing/archive.sh"
 log "  ~/.claude/memory/MEMORY.md"
 log "  ~/.claude/memory/_frontmatter-template.md"
-log "  ~/.claude/memory/preferences/*.md (8 个，含 Feedback 占位)"
+log "  ~/.claude/memory/preferences/*.md (7 个，不含 Feedback 占位)"
 log ""
 log "已保护的 about-me/ 文件（如果已存在则跳过）："
 for f in profile.md tech-stack.md family.md; do
@@ -531,6 +609,16 @@ for f in profile.md tech-stack.md family.md; do
         log "  ~/.claude/memory/about-me/$f"
     fi
 done
+if [ -n "${MEMORY_BAK:-}" ] && [ -d "$MEMORY_BAK" ]; then
+    log ""
+    log "⏪ 旧 memory/ 内容已备份到: $MEMORY_BAK"
+    log "   旧内容在备份目录里，如需恢复请手动合并（脚本不会自动覆盖用户数据）"
+    log "   示例: cp -n $MEMORY_BAK/about-me/profile.md $MEMORY_DIR/about-me/"
+fi
+log ""
+log "已安装到 ~/.claude/ 的参考文档（已存在则跳过）："
+log "  ~/.claude/初始化要求.md"
+log "  ~/.claude/记忆系统架构.md"
 log ""
 log "下一步："
 log "  1. 重新启动 Claude Code 使命令生效"
