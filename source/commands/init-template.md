@@ -63,10 +63,12 @@ description: 项目初始化模板——模拟内置 /init 流程（分析项目
 1. 读 `~/claude-template-distribute/blacklist.md`（本次执行只读一次）
 2. 列出 `$PWD` 的一级子目录
 3. 逐个判断：
-   - 命中黑名单（node_modules/ .venv/ dist/ .git/ __pycache__/ 等机器生成目录）→ **跳过**
+   - 命中黑名单（node_modules/ .venv/ dist/ .git/ .claude/ __pycache__/ 等机器生成/配置目录）→ **跳过**（`.claude/` 强制跳过：建 CLAUDE.md 会被 Claude Code 自动加载，与根 CLAUDE.md 双份冲突）
    - 已有 CLAUDE.md → **跳过**
-   - 手写源码/文档目录（src/ docs/ tests/ config/ scripts/ db/ examples/ 等）→ 创建简短 CLAUDE.md（组件、功能、技术栈、依赖关系）
+   - **其余一级子目录一律创建简短 CLAUDE.md**——包括生成物/测试/归档目录（内容=该目录结构总览+访问约定），不依赖临场判断
+   - 手写源码/文档目录（src/ docs/ tests/ config/ scripts/ db/ examples/ 等）→ 内容再加组件、功能、技术栈、依赖关系
 4. 每个子目录 CLAUDE.md 只放该目录的架构要点，不冗余、不写流水账
+5. 跳过的子目录必须在步骤 5 汇报中逐条列出理由，不静默跳过
 
 ### 步骤 5：幂等自检 + 汇报
 
