@@ -42,7 +42,7 @@ CUTOFF=$(date -d "1 day ago" +%Y%m%d)
 # LanceDB 可用性探测（可选增强：没装 lancedb 就全程跳过，不影响归档）
 LANCEDB_OK=false
 LANCEDB_SCRIPT=""
-if command -v python3 >/dev/null 2>&1 && python3 -c "import lancedb" >/dev/null 2>&1; then
+if [ -x "$HOME/.venvs/lancedb/bin/python3" ] && "$HOME/.venvs/lancedb/bin/python3" -c "import lancedb" >/dev/null 2>&1; then
     LANCEDB_OK=true
     LANCEDB_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/archive_to_lancedb.py"
 fi
@@ -66,7 +66,7 @@ for f in "$PROJECTS_DIR"/*.md; do
     if [[ "$date_prefix" =~ ^[0-9]{8}$ ]] && [ "$date_prefix" -le "$CUTOFF" ]; then
         # 移动前先写 LanceDB（可选增强，写失败静默跳过）
         if [ "$LANCEDB_OK" = true ] && [ -f "$LANCEDB_SCRIPT" ]; then
-            if python3 "$LANCEDB_SCRIPT" "$PROJECT_NAME" "$f" >/dev/null 2>&1; then
+            if "$HOME/.venvs/lancedb/bin/python3" "$LANCEDB_SCRIPT" "$PROJECT_NAME" "$f" >/dev/null 2>&1; then
                 lancedb_count=$((lancedb_count+1))
             fi
         fi
