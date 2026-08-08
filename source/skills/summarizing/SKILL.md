@@ -1,6 +1,6 @@
 ---
 name: summarizing
-description: /summarizing 命令的归档脚本——扫描项目级 projects/ 下超过 3 天的总结文件，移动到 archive/projects/；独立可手动调用
+description: /summarizing 命令的归档脚本——扫描项目级 projects/ 下超过 1 天的总结文件，移动到 archive/projects/；独立可手动调用
 ---
 
 # Summarizing 归档 Skill
@@ -16,7 +16,7 @@ bash ~/.claude/skills/summarizing/archive.sh <projects_dir>
 ## 行为
 
 - 扫描 `<projects_dir>/*.md`
-- 文件名前 8 位是 YYYYMMDD 且 ≤ 3 天前的日期 → 移动到 `<projects_dir>/../archive/projects/`
+- 文件名前 8 位是 YYYYMMDD 且 ≤ 1 天前的日期 → 移动到 `<projects_dir>/../archive/projects/`
 - 移动而非删除
 - 写日志到 `<projects_dir>/.archive.log`
 

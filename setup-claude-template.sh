@@ -28,7 +28,7 @@
 # | 3    | mkdir memory/{about-me,preferences}、commands/     | mkdir -p 已存在不报错                  |
 # | 4    | preferences/*.md、MEMORY.md        | ⚠️ 覆盖式（用户要求保留 v1.5 行为）     |
 # | 5    | about-me/{profile,tech,family}    | ✅ 已存在且非空 → 跳过；空/不存在 → 复制 |
-# | 6    | commands/{summarizing,init-template}.md + skills/ | ⚠️ 覆盖式（脚本即命令本身，需保持最新） |
+# | 6    | commands/{summarizing,init-template,rebuild-claude}.md + skills/ | ⚠️ 覆盖式（脚本即命令本身，需保持最新） |
 # | 6.5  | blacklist.md                      | ✅ 缺失或内容不一致 → 覆盖；一致 → 跳过 |
 # | 6.6  | Harness架构.md                    | ✅ 已存在 → 跳过覆盖（保护用户手改）   |
 # | 6.7  | 初始化要求.md、记忆系统架构.md      | ✅ 已存在 → 跳过覆盖（保护用户手改）   |
@@ -325,6 +325,9 @@ run_cmd "复制 commands/summarizing.md" \
 run_cmd "复制 commands/init-template.md" \
     cp "$SOURCE_DIR/commands/init-template.md" "$TARGET_HOME/.claude/commands/init-template.md"
 
+run_cmd "复制 commands/rebuild-claude.md" \
+    cp "$SOURCE_DIR/commands/rebuild-claude.md" "$TARGET_HOME/.claude/commands/rebuild-claude.md"
+
 run_cmd "复制 skills/summarizing/SKILL.md" \
     cp "$SOURCE_DIR/skills/summarizing/SKILL.md" "$TARGET_HOME/.claude/skills/summarizing/SKILL.md"
 
@@ -333,6 +336,26 @@ run_cmd "复制 skills/summarizing/archive.sh" \
 
 run_cmd "设置 archive.sh 可执行" \
     chmod +x "$TARGET_HOME/.claude/skills/summarizing/archive.sh"
+
+run_cmd "复制 skills/summarizing/archive_to_lancedb.py" \
+    cp "$SOURCE_DIR/skills/summarizing/archive_to_lancedb.py" "$TARGET_HOME/.claude/skills/summarizing/archive_to_lancedb.py"
+
+# ====== Step 6.4: LanceDB 可选安装询问 ======
+log ""
+log "===== Step 6.4: LanceDB 可选安装询问 ====="
+
+if confirm "是否安装 LanceDB 长期记忆库？"; then
+    if [ "$DRY_RUN" = true ]; then
+        log "[dry-run] python3 -m pip install lancedb tantivy pandas"
+    elif python3 -m pip install lancedb tantivy pandas >/dev/null 2>&1; then
+        log "✅ LanceDB 安装成功，长期记忆将自动写入 ~/.lancedb/summaries/"
+    else
+        warn "LanceDB 安装失败（可选增强，不中断脚本）"
+        log "    可稍后手动安装：python3 -m pip install lancedb tantivy pandas"
+    fi
+else
+    log "跳过 LanceDB 安装，项目总结按原归档方式运行"
+fi
 
 # ====== Step 6.5: 安装 blacklist.md 到工具目录 ======
 log ""
@@ -597,8 +620,10 @@ log ""
 log "已复制/覆盖的文件："
 log "  ~/.claude/commands/summarizing.md"
 log "  ~/.claude/commands/init-template.md"
+log "  ~/.claude/commands/rebuild-claude.md"
 log "  ~/.claude/skills/summarizing/SKILL.md"
 log "  ~/.claude/skills/summarizing/archive.sh"
+log "  ~/.claude/skills/summarizing/archive_to_lancedb.py"
 log "  ~/.claude/memory/MEMORY.md"
 log "  ~/.claude/memory/_frontmatter-template.md"
 log "  ~/.claude/memory/preferences/*.md (7 个，不含 Feedback 占位)"

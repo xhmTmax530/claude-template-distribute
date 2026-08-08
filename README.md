@@ -105,7 +105,7 @@ AI 执行：
 
 ## 🛠️ 脚本做了什么（setup-claude-template.sh v1.6）
 
-脚本有 **9 个 Step**（加 v1.6 新增的 banner 和幂等审计）：
+脚本有 **11 个 Step**（加 v1.6 新增的 banner 和幂等审计）：
 
 | Step | 内容 | 幂等策略 |
 |------|------|----------|
@@ -116,6 +116,7 @@ AI 执行：
 | 4 | 复制 memory 文件（preferences/*.md、MEMORY.md、_frontmatter-template.md） | ⚠️ 覆盖式 |
 | 5 | about-me/ 骨架保护（profile.md、tech-stack.md、family.md） | ✅ 已存在且非空 → 跳过 |
 | 6 | 复制 commands/summarizing.md + skills/summarizing/ | ⚠️ 覆盖式 |
+| 6.4 | LanceDB 可选安装询问（v2.5 新增） | 🎯 交互式（可选增强，失败不中断） |
 | 6.5 | 安装 blacklist.md 到 ~/claude-template-distribute/ | ⚠️ 覆盖式（黑名单必须最新） |
 | 6.6 | 安装 Harness架构.md 到 ~/.claude/（v1.5 新增） | ✅ 已存在 → 跳过（保护用户手改） |
 | 7 | CLAUDE.md 4 选项处理（v1.7 重构） | 🎯 交互式（含标记机制 + 失败降级） |
@@ -190,6 +191,7 @@ AI 执行：
 ├── Harness架构.md                  # 三级指针链规则（/init 读一次）
 ├── blacklist.md                    # Harness 黑名单（node_modules、.git 等）
 ├── setup-claude-template.sh        # 一键安装脚本（v1.6）
+├── LanceDB安装部署手册.md           # LanceDB 手动部署指南（纯手动可部署，照着敲命令即可）
 ├── README.md                       # 本文档
 └── source/                         # 模板源目录（脚本从这里复制）
     ├── memory/
@@ -209,11 +211,13 @@ AI 执行：
     │       ├── role.md
     │       └── selection-report.md
     ├── commands/
-    │   └── summarizing.md           # /summarizing 命令定义
+    │   ├── summarizing.md           # /summarizing 命令定义
+    │   └── rebuild-claude.md        # /rebuild-claude 命令定义（重建 CLAUDE.md 索引）
     └── skills/
         └── summarizing/
             ├── SKILL.md             # summarizing skill 定义
-            └── archive.sh           # 归档脚本（>3 天总结移到 archive/）
+            ├── archive.sh           # 归档脚本（>1 天总结移到 archive/）
+            └── archive_to_lancedb.py # LanceDB 写入脚本（可选增强，归档前调用）
 ```
 
 ---
@@ -430,6 +434,16 @@ bash ~/claude-template-distribute/check-project-hierarchy.sh ~/work/myapp
 
 **Feedback.md 标记为选填**——summarizing 跑后才有，缺失不提醒。
 
+### 8. LanceDB 长期记忆集成（v2.5 新增，可选增强）
+
+/summarizing 归档时，若目标环境已安装 lancedb，过期总结会在移入 archive/ 前自动写入 `~/.lancedb/summaries/`：
+
+- **零侵入可选增强**：未安装 lancedb → 完全按原归档方式运行，不报错、零依赖；安装后自动启用
+- **按项目隔离**：每个项目一张表，表名 = 项目名，行结构 `text`（总结全文）/ `project` / `date`（YYYYMMDD）
+- **零向量零依赖**：不做 embedding，检索靠 LanceDB 原生 FTS（tantivy），仓库保持零额外 Python 依赖
+- **备份 = 拷贝目录**：`~/.lancedb/summaries/` 整个目录拷贝即完成备份，无中心数据库
+- **安装方式**：setup 脚本 Step 6.4 交互式询问（失败不中断），或按 `LanceDB安装部署手册.md` 手动部署
+
 ---
 
 ## 📚 Token 节省量化
@@ -511,6 +525,16 @@ cp ~/.claude/CLAUDE.md ~/claude-template-distribute/CLAUDE.md
 
 ## 📜 版本历史
 
+- **v2.5**（2026-08-08）：新增 LanceDB 长期记忆集成（可选增强，按项目隔离，归档前写入 ~/.lancedb/summaries/，未装 lancedb 按原方式运行）；归档阈值 3 天 → 1 天；/summarizing 先读最近总结在其上改写、禁止同日多份；新增 /rebuild-claude 命令 + LanceDB安装部署手册.md；setup 脚本新增 Step 6.4（交互式询问是否安装 LanceDB，失败不中断）；初始化要求.md 新增"会话前读取最近项目总结"提示词
+- **v2.4.1**（2026-08-06）：渐进式读取修复——blacklist 补 .claude/ 强制跳过，命令步骤 4 改为除黑名单外一律创建子目录 CLAUDE.md
+- **v2.4**（2026-08-02）：init-template 自定义命令 + setup 脚本全面修复
+- **v2.3**（2026-07-29）：强制子 agent 规则（主 agent 最小集）
+- **v2.2.1**（2026-07-29）：修正"一句话摘要"措辞 → 结构化要点 + 关键细节 + 指针
+- **v2.2**（2026-07-29）：修正渐进式披露措辞，限定为"仅外部大资料场景"
+- **v2.1**（2026-07-29）：references/ 指针化 + 渐进式披露
+- **v2.0**（2026-07-26）：回滚英文版 + 维度 1 加优先级列
+- **v1.9**（2026-07-26）：summarizing 优先级列 + 全英文化 + 格式紧凑化
+- **v1.8**（2026-07-25）：summarizing 落盘健康检查 + Feedback.md 兜底建占位
 - **v1.7**（2026-07-23）：Step 7 重构为 4 选项交互式（跳过 / 覆盖 / 追加+标记 / 项目级）；加失败降级 + 标记机制 + 完成提示运行检查脚本
 - **v1.6**（2026-07-22）：脚本开头加 banner + 系统目录警告 + 幂等性审计表
 - **v1.5**（2026-07-22）：加 Step 6.6 分发 Harness架构.md
