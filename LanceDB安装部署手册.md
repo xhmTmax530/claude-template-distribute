@@ -24,15 +24,24 @@ python3 -m pip --version   # 应显示 pip 版本号
 ## 三、安装命令
 
 ```bash
-python3 -m pip install lancedb lancedb[embeddings] tantivy pandas
+python3 -m pip install lancedb tantivy pandas
 ```
 
 各包作用：
 
 - `lancedb`：数据库本体
-- `lancedb[embeddings]`：嵌入模型可选依赖（本模板不用向量，装了备用）
 - `tantivy`：全文检索引擎（FTS 检索靠它）
 - `pandas`：表数据底层依赖
+
+**可选（向量语义检索，本模板默认不用）**：嵌入走阿里云千问 text-embedding-v4 API：
+
+```bash
+python3 -m pip install openai
+echo 'export DASHSCOPE_API_KEY=sk-你的key' >> ~/.bashrc   # 百炼控制台创建：https://bailian.console.aliyun.com
+source ~/.bashrc
+```
+
+费用：单价 0.0005 元/千 token，个人年用量约 70-100 万 token，**年费不足 1 元**；新用户 90 天免费 100 万 token。离线备选：`python3 -m pip install sentence-transformers` 切回本地 bge（BAAI/bge-small-zh-v1.5）。
 
 老 CPU 替代方案：
 
@@ -82,6 +91,8 @@ python3 -c "import lancedb, os; db = lancedb.connect(os.path.expanduser('~/.lanc
 1. **重跑 setup 脚本**：`bash ~/claude-template-distribute/setup-claude-template.sh`，Step 6.4 选 y
 2. **手动装**：按第三节装好即可，**无需任何配置**——archive.sh 每次运行都会探测 `import lancedb`，检测到就自动开始写入
 
+`archive_to_lancedb.py` 刻意保持**零依赖设计**：只存总结全文 + BM25 关键词索引（FTS），不做向量嵌入、**不依赖 API Key**——离线 / 无网 / 未配置千问 key 都不影响归档与检索；想升级语义检索可参照主部署手册（千问 text-embedding-v4）。
+
 ## 六、检索历史总结（可选）
 
 ```bash
@@ -125,3 +136,6 @@ EOF
 | `import lancedb` 报错 | 重跑第三节安装命令 |
 | 老 CPU 装不上原生版 | `python3 -m pip install lancedb-compat` |
 | 归档输出没有 "LanceDB 写入" 行 | 正常——LanceDB 未安装时静默跳过，归档照常移动 |
+| 嵌入报错：DASHSCOPE_API_KEY 未配置 | 本模板 FTS 检索不依赖嵌入，可忽略；要用向量检索需按第三节配置 key |
+| 千问 embedding 调用失败 / 限流 | 检查网络与 key 有效性；429 限流稍后重试；可临时切本地 bge 离线备选 |
+| 不想联网 | 不影响——归档与 FTS 检索全程本地；嵌入是可选项 |
