@@ -525,6 +525,7 @@ cp ~/.claude/CLAUDE.md ~/claude-template-distribute/CLAUDE.md
 
 ## 📜 版本历史
 
+- **v2.5.2**（2026-08-08）：记忆增强——LanceDB 归档表新增 summary/files 字段（旧表自动补列），CLAUDE.md 增加"涉及历史回溯语义时查询记忆库"规则
 - **v2.5**（2026-08-08）：新增 LanceDB 长期记忆集成（可选增强，按项目隔离，归档前写入 ~/.lancedb/summaries/，未装 lancedb 按原方式运行）；归档阈值 3 天 → 1 天；/summarizing 先读最近总结在其上改写、禁止同日多份；新增 /rebuild-claude 命令 + LanceDB安装部署手册.md；setup 脚本新增 Step 6.4（交互式询问是否安装 LanceDB，失败不中断）；初始化要求.md 新增"会话前读取最近项目总结"提示词
 - **v2.4.1**（2026-08-06）：渐进式读取修复——blacklist 补 .claude/ 强制跳过，命令步骤 4 改为除黑名单外一律创建子目录 CLAUDE.md
 - **v2.4**（2026-08-02）：init-template 自定义命令 + setup 脚本全面修复

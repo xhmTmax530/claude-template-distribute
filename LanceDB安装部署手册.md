@@ -68,13 +68,17 @@ python3 -c "import lancedb; print(lancedb.__version__)"
         └── ...         # lancedb 内部数据文件（_versions/ 等，勿手改）
 ```
 
-每行记录 3 个字段：
+每行记录 5 个字段：
 
 | 字段 | 内容 |
 |------|------|
 | text | 总结文件全文 |
 | project | 项目名 |
 | date | 归档日期 YYYYMMDD（取自文件名前 8 位） |
+| summary | 一句话概要（取自总结 frontmatter 的 description） |
+| files | 涉及文件清单（逗号分隔，最多 10 条） |
+
+Claude 会在涉及历史回溯语义时主动查询记忆库，也可手动查询。
 
 手动验证写入（装好并归档过一次后）：
 
