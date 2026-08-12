@@ -13,8 +13,21 @@
 #   就按原 3 字段写入，打印一行黄字警告，不阻塞归档。
 # 不需要向量：保持零依赖，检索靠 lancedb 原生 FTS（tantivy）
 
+import hashlib
 import os
+import re
 import sys
+
+# 表名白名单：lancedb 只允许字母数字/下划线/连字符/点（中文目录名做项目名时会被拒）
+TABLE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def sanitize_table_name(name: str) -> str:
+    """清洗表名：非白名单字符转下划线；清洗后与原名不同则补 6 位短哈希保证唯一（同名清洗会碰撞）。"""
+    cleaned = TABLE_NAME_RE.sub("_", name)
+    if cleaned != name:
+        cleaned = f"{cleaned}_{hashlib.md5(name.encode('utf-8')).hexdigest()[:6]}"
+    return cleaned
 
 
 def extract_summary(text: str) -> str:
@@ -69,7 +82,8 @@ def ensure_new_columns(table) -> bool:
 def main() -> None:
     if len(sys.argv) != 3:
         sys.exit(1)
-    project, file_path = sys.argv[1], sys.argv[2]
+    project_raw, file_path = sys.argv[1], sys.argv[2]
+    project = sanitize_table_name(project_raw)
 
     try:
         import lancedb
@@ -83,9 +97,9 @@ def main() -> None:
         summary = extract_summary(text)
         files = extract_files(text)
 
-        if project in db.table_names():
+        if project in db.list_tables().tables:
             table = db.open_table(project)
-            row = {"text": text, "project": project, "date": date_str}
+            row = {"text": text, "project": project_raw, "date": date_str}
             if ensure_new_columns(table):
                 row["summary"], row["files"] = summary, files
             else:
@@ -94,11 +108,12 @@ def main() -> None:
             table.add([row])
         else:
             db.create_table(project, data=[{
-                "text": text, "project": project, "date": date_str,
+                "text": text, "project": project_raw, "date": date_str,
                 "summary": summary, "files": files,
             }])
-    except Exception:
-        # 写入失败静默跳过：LanceDB 是可选增强，不阻塞归档
+    except Exception as e:
+        # 写入失败不阻塞归档，但打黄字警告——完全静默会让"写失败"与"没装 lancedb"无法区分
+        print(f"\033[33m[archive_to_lancedb] 写入失败（{project_raw} → 表 {project}）: {e}\033[0m", file=sys.stderr)
         sys.exit(1)
 
 
